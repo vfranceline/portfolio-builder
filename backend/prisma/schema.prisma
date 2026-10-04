@@ -5,9 +5,283 @@
 
 generator client {
   provider = "prisma-client"
-  output   = "../../../../../../src/generated/prisma"
+  output   = "../src/generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+enum Locale {
+  PT_BR
+  EN
+}
+
+enum AuthProvider {
+  GITHUB
+  GOOGLE
+}
+
+enum SocialPlatform {
+  GITHUB
+  LINKEDIN
+  TWITTER
+  INSTAGRAM
+  WEBSITE
+  OTHER
+}
+
+enum SectionType {
+  ABOUT
+  SKILLS
+  PROJECTS
+  EXPERIENCE
+  LINKS
+}
+
+enum AnalyticsEventType {
+  VIEW
+  LINK_CLICK
+  PROJECT_CLICK
+}
+
+// ---------- Autenticação ----------
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String? // null para quem só usa OAuth
+  name         String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  accounts   Account[]
+  portfolios Portfolio[]
+  assets     Asset[]
+}
+
+model Account {
+  id                String       @id @default(cuid())
+  userId            String
+  provider          AuthProvider
+  providerAccountId String
+  createdAt         DateTime     @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+// ---------- Portfólio ----------
+
+model Portfolio {
+  id            String   @id @default(cuid())
+  userId        String
+  name          String // rótulo interno, só o dono vê
+  slug          String   @unique
+  displayName   String
+  defaultLocale Locale   @default(PT_BR)
+  themeId       String?
+  avatarId      String?
+  ogImageId     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  publishedVersionId String?            @unique
+  publishedVersion   PortfolioVersion?  @relation("PublishedVersion", fields: [publishedVersionId], references: [id], onDelete: SetNull)
+  versions           PortfolioVersion[] @relation("PortfolioVersions")
+
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  theme   Theme? @relation(fields: [themeId], references: [id])
+  avatar  Asset? @relation("PortfolioAvatar", fields: [avatarId], references: [id], onDelete: SetNull)
+  ogImage Asset? @relation("PortfolioOgImage", fields: [ogImageId], references: [id], onDelete: SetNull)
+
+  translations  PortfolioTranslation[]
+  sections      Section[]
+  socialLinks   SocialLink[]
+  skills        Skill[]
+  projects      Project[]
+  experiences   Experience[]
+  slugRedirects SlugRedirect[]
+  events        AnalyticsEvent[]
+
+  @@index([userId])
+}
+
+model PortfolioTranslation {
+  id             String  @id @default(cuid())
+  portfolioId    String
+  locale         Locale
+  headline       String?
+  bio            String?
+  seoTitle       String? // preview em LinkedIn/WhatsApp
+  seoDescription String?
+
+  portfolio Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+
+  @@unique([portfolioId, locale])
+}
+
+model PortfolioVersion {
+  id          String   @id @default(cuid())
+  portfolioId String
+  version     Int
+  content     Json // snapshot completo, todos os idiomas
+  createdAt   DateTime @default(now())
+
+  portfolio     Portfolio  @relation("PortfolioVersions", fields: [portfolioId], references: [id], onDelete: Cascade)
+  livePortfolio Portfolio? @relation("PublishedVersion")
+
+  @@unique([portfolioId, version])
+}
+
+model SlugRedirect {
+  oldSlug     String   @id
+  portfolioId String
+  createdAt   DateTime @default(now())
+
+  portfolio Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+
+  @@index([portfolioId])
+}
+
+model Section {
+  id          String      @id @default(cuid())
+  portfolioId String
+  type        SectionType
+  position    Int
+  isVisible   Boolean     @default(true)
+
+  portfolio Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+
+  @@unique([portfolioId, type])
+  @@index([portfolioId, position])
+}
+
+// ---------- Conteúdo ----------
+
+model SocialLink {
+  id          String         @id @default(cuid())
+  portfolioId String
+  platform    SocialPlatform
+  url         String
+  position    Int            @default(0)
+
+  portfolio Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+
+  @@index([portfolioId, position])
+}
+
+model Skill {
+  id          String  @id @default(cuid())
+  portfolioId String
+  name        String
+  category    String?
+  position    Int     @default(0)
+
+  portfolio Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+
+  @@index([portfolioId, position])
+}
+
+model Project {
+  id           String   @id @default(cuid())
+  portfolioId  String
+  repoUrl      String?
+  liveUrl      String?
+  imageId      String?
+  technologies String[]
+  featured     Boolean  @default(false)
+  position     Int      @default(0)
+
+  portfolio    Portfolio            @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  image        Asset?               @relation(fields: [imageId], references: [id], onDelete: SetNull)
+  translations ProjectTranslation[]
+
+  @@index([portfolioId, position])
+}
+
+model ProjectTranslation {
+  id          String @id @default(cuid())
+  projectId   String
+  locale      Locale
+  title       String
+  description String
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, locale])
+}
+
+model Experience {
+  id          String    @id @default(cuid())
+  portfolioId String
+  company     String
+  startDate   DateTime
+  endDate     DateTime?
+  position    Int       @default(0)
+
+  portfolio    Portfolio               @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  translations ExperienceTranslation[]
+
+  @@index([portfolioId, position])
+}
+
+model ExperienceTranslation {
+  id           String  @id @default(cuid())
+  experienceId String
+  locale       Locale
+  role         String
+  description  String?
+
+  experience Experience @relation(fields: [experienceId], references: [id], onDelete: Cascade)
+
+  @@unique([experienceId, locale])
+}
+
+// ---------- Temas e arquivos ----------
+
+model Theme {
+  id        String  @id @default(cuid())
+  name      String  @unique
+  layoutKey String
+  colors    Json
+  isDefault Boolean @default(false)
+
+  portfolios Portfolio[]
+}
+
+model Asset {
+  id        String   @id @default(cuid())
+  ownerId   String
+  key       String   @unique // chave do objeto no S3
+  mimeType  String
+  sizeBytes Int
+  createdAt DateTime @default(now())
+
+  owner         User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  avatarOf      Portfolio[] @relation("PortfolioAvatar")
+  ogImageOf     Portfolio[] @relation("PortfolioOgImage")
+  projectImages Project[]
+
+  @@index([ownerId])
+}
+
+// ---------- Analytics ----------
+
+model AnalyticsEvent {
+  id          BigInt             @id @default(autoincrement())
+  portfolioId String
+  type        AnalyticsEventType
+  locale      Locale?
+  targetUrl   String?
+  referrer    String?
+  country     String?
+  visitorHash String?
+  createdAt   DateTime           @default(now())
+
+  portfolio Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+
+  @@index([portfolioId, createdAt])
 }
